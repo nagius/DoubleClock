@@ -13,14 +13,14 @@ class Display
 {
   private:
   
-    String msg;
-    char buffer[DISPLAY_SIZE];
-    int index = 0;
-    Adafruit_AlphaNum4 display;
+    String _msg;
+    char _buffer[DISPLAY_SIZE];
+    int _index = 0;
+    Adafruit_AlphaNum4 _display;
 
   public:
   
-    Display(Adafruit_AlphaNum4 d);
+    Display(Adafruit_AlphaNum4 display);
     
     void setMsg(String msg);
     void tick();
@@ -28,7 +28,7 @@ class Display
   private:
   
     void clearBuffer();
-    void write());
+    void write();
     
 };
 
