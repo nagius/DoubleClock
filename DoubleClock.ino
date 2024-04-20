@@ -27,6 +27,7 @@
 #define DEFAULT_MQTT_SERVER "0.0.0.0"
 #define DEFAULT_MQTT_PORT 1883
 #define DEFAULT_MQTT_TOPIC "doubleclock"
+#define DEFAULT_ALARM_TIMEOUT 1800 // 30 minutes
 
 
 // Internal constant
@@ -50,6 +51,7 @@
 #define GPIO_MUSIC_BUZZER 13 // D7
 #define GPIO_MUSIC_OFF 15    // D8
 #define GPIO_MUSIC_IN 10     // SD3
+#define GPIO_LIGHT_SENSOR A0 // ADC0
 
 #define PWMRANGE 255 // 1023
 #define RISING_TIME 180 // seconde
@@ -616,6 +618,16 @@ void alarm()
   }
 }
 
+void stop_alarm()
+{
+  if(state >= STATE_RING)
+    logger.info("Alarm stopped");
+
+  state = STATE_OFF;
+  light_off();
+  music_off();
+}
+
 void ring()
 {
   long alarm_duration = (millis() - alarm_start_time);
@@ -786,9 +798,7 @@ void loop()
     }
     else
     {
-        state = STATE_OFF;
-        light_off();
-        music_off();
+        stop_alarm();
         mqtt_publish("off");
     }
   } 
@@ -809,6 +819,12 @@ void loop()
       state = STATE_RING_BUZZER;
       music_off();
       mqtt_publish("alarm-buzzer");
+    }
+
+    if(alarm_duration >= DEFAULT_ALARM_TIMEOUT*1000)
+    {
+      stop_alarm();
+      mqtt_publish("alarm-cancelled");
     }
 
     ring();
