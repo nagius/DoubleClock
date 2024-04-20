@@ -1,6 +1,6 @@
 // Double clock
 
-// TODO reome Ireland Span TZA TZB
+// TODO rename Ireland Span TZA TZB
 // TODO move Settings to other file .h
 // TODO add mqtt dans wifimanager
 // Siplify settings with https://www.arduino.cc/reference/en/libraries/wifimqttmanager-library/
@@ -32,7 +32,7 @@
 // Internal constant
 #define AUTHBASIC_LEN 21        // Login or password 20 char max
 #define BUF_SIZE 256            // Used for string buffers
-#define VERSION "1.2"
+#define VERSION "1.3"
 
 #define STATE_OFF 1             // Nothing
 #define STATE_ON 2              // Light on, no alarm
@@ -612,6 +612,7 @@ void alarm()
     logger.info("Alarm trigerred");
     state = STATE_RING;
     alarm_start_time = millis();
+    mqtt_publish("alarm");
   }
 }
 
@@ -644,18 +645,6 @@ void ring()
 
 void refresh_displays()
 {
-    //logger.info("Dublin time: %s", Ireland.dateTime().c_str());
-    //logger.info("Madrid time: %s", Spain.dateTime().c_str());
- //   Serial.println("UTC RFC822:           " + UTC.dateTime(RFC822));
-   // Serial.println("UTC TZ:    " + UTC.dateTime("T"));
-    
-   // Serial.println("Europe/Dublin RFC822: " + Ireland.dateTime(RFC822));
-    //Serial.println("Dublin TZ: " + Ireland.dateTime("T"));
-
-        
-    //logger.info("%i:%i %s", Ireland.hour(), Ireland.minute(), Ireland.dateTime(RFC822));
-    //logger.info("%i:%i %s", Spain.hour(), Spain.minute(), Spain.dateTime(RFC822));
-
     if(state >= STATE_RING) {
       tzA.setMsg("WAKE UP   ");
       tzB.setMsg(" today is " + dayStr(Ireland.weekday()) + "  ");
@@ -668,15 +657,10 @@ void refresh_displays()
 
     dot=!dot;
   
-  
     timeA.print(Ireland.hour()*100 + Ireland.minute());
-    //timeA.print(String(Ireland.hour()*100 + Ireland.minute()));
     timeA.drawColon(dot);
     timeA.writeDisplay();
 
-    //char buff[5];
-    //snprintf(buff, 4, "%02i%02i", Spain.hour(), Spain.minute());
-    //timeB.print(buff);
     timeB.print(Spain.hour()*100 + Spain.minute());
     timeB.drawColon(dot);
     timeB.writeDisplay();
@@ -714,9 +698,7 @@ void setupNTP()
   tzA.setMsg("NTP");
   Ireland.setLocation("Europe/London");
   Spain.setLocation("Europe/Madrid");
-  //setInterval(300);  // 5 minutes  - default 30 minutes
   setDebug(INFO);
-  // TODO display error
   waitForSync(60); // 60s timeout on initial NTP request
 }
 
@@ -796,7 +778,6 @@ void loop()
 
   if(isButtonPressed())
   {
-    logger.debug("state=%d", state);
     if(state == STATE_OFF)
     {
         state = STATE_ON;
@@ -817,14 +798,14 @@ void loop()
     
     if(state == STATE_RING && alarm_duration >= settings.alarm_chime_delay*1000)
     {
-      logger.debug("swtcih ring chime");
+      logger.debug("ALARM chime on");
       state = STATE_RING_CHIME;
       mqtt_publish("alarm-chime");
     }
 
     if(state == STATE_RING_CHIME && alarm_duration >= (settings.alarm_chime_delay+settings.alarm_buzzer_delay)*1000)
     {
-      logger.debug("swtcih ring chime");
+      logger.debug("ALARM buzzer on");
       state = STATE_RING_BUZZER;
       music_off();
       mqtt_publish("alarm-buzzer");
@@ -842,7 +823,6 @@ void loop()
       if(tm.Wday != SUNDAY && tm.Wday != SATURDAY)
       {
         alarm();
-        mqtt_publish("alarm");
       }
     }
   }
