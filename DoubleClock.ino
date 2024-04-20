@@ -3,10 +3,13 @@
 // TODO reome Ireland Span TZA TZB
 // TODO move Settings to other file .h
 // TODO add mqtt dans wifimanager
+// Siplify settings with https://www.arduino.cc/reference/en/libraries/wifimqttmanager-library/
+
 
 #include <ESP8266WiFi.h>         
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
+#include <PubSubClient.h>
 #include <WiFiManager.h>         // See https://github.com/tzapu/WiFiManager for documentation
 #include <EEPROM.h>
 #include <ezTime.h>
@@ -21,6 +24,10 @@
 #define DEFAULT_LOGIN ""        // AuthBasic credentials
 #define DEFAULT_PASSWORD ""     // (default no auth)
 #define DEFAULT_DELAY 0         // Chime and buzzer disabled by default
+#define DEFAULT_MQTT_SERVER "0.0.0.0"
+#define DEFAULT_MQTT_PORT 1883
+#define DEFAULT_MQTT_TOPIC "doubleclock"
+
 
 // Internal constant
 #define AUTHBASIC_LEN 21        // Login or password 20 char max
@@ -52,7 +59,7 @@ struct ST_SETTINGS {
   bool serial;
   char login[AUTHBASIC_LEN];
   char password[AUTHBASIC_LEN];
-  // TODO  manage multiple alarm with TZ
+  char mqtt_server[AUTHBASIC_LEN];  // TODO use right size for DNS
   uint8_t alarm_hr;
   uint8_t alarm_min;
   uint16_t alarm_chime_delay;
@@ -64,6 +71,7 @@ struct ST_SETTINGS_FLAGS {
   bool serial;
   bool login;
   bool password;
+  bool mqtt_server;
   bool alarm_hr;
   bool alarm_min;
   bool alarm_chime_delay;
@@ -72,6 +80,8 @@ struct ST_SETTINGS_FLAGS {
 
 
 // Global variables
+WiFiClient wifiClient;
+PubSubClient mqtt(wifiClient);
 ESP8266WebServer server(80);
 Logger logger = Logger();
 ST_SETTINGS settings;
@@ -153,7 +163,7 @@ void handleGETSettings()
 void handlePOSTSettings()
 {
   ST_SETTINGS st;
-  ST_SETTINGS_FLAGS isNew = { false, false, false, false, false, false };
+  ST_SETTINGS_FLAGS isNew = { false, false, false, false, false, false, false };
 
   if(!isAuthBasicOK())
     return;
@@ -188,6 +198,11 @@ void handlePOSTSettings()
     {
       server.arg(i).toCharArray(st.password, AUTHBASIC_LEN);
       isNew.password = true;
+    }
+    else if(param == "mqtt-server")
+    {
+      server.arg(i).toCharArray(st.mqtt_server, AUTHBASIC_LEN);
+      isNew.mqtt_server = true;
     }
     else if(param == "hour")
     {
@@ -279,6 +294,13 @@ void handlePOSTSettings()
     logger.info("Updated password.");
   }
 
+  if(isNew.mqtt_server)
+  {
+    strcpy(settings.mqtt_server, st.mqtt_server);
+    setupMQTT();
+    logger.info("Updated MQTT serer to \"%s\".", st.mqtt_server);
+  }
+
   if(isNew.alarm_hr)
   {
     settings.alarm_hr = st.alarm_hr;
@@ -358,8 +380,9 @@ bool isAuthBasicOK()
 char* getJSONSettings()
 {
   //Generate JSON 
-  snprintf(buffer, BUF_SIZE, "{ \"login\": \"%s\", \"password\": \"<hidden>\", \"debug\": %s, \"serial\": %s, \"hour\": %i, \"minutes\": %i, \"delay-chime\": %i, \"delay-buzzer\": %i }\r\n",
+  snprintf(buffer, BUF_SIZE, "{ \"login\": \"%s\", \"password\": \"<hidden>\", \"mqtt-server\": \"%s\", \"debug\": %s, \"serial\": %s, \"hour\": %i, \"minutes\": %i, \"delay-chime\": %i, \"delay-buzzer\": %i }\r\n",
     settings.login,
+    settings.mqtt_server,
     settings.debug ? "true" : "false",
     settings.serial ? "true" : "false",
     settings.alarm_hr,
@@ -439,6 +462,7 @@ void setDefaultSettings()
 {
     strcpy(settings.login, DEFAULT_LOGIN);
     strcpy(settings.password, DEFAULT_PASSWORD);
+    strcpy(settings.mqtt_server, DEFAULT_MQTT_SERVER);
     settings.debug = true;
     settings.serial = true;
     settings.alarm_hr = 255;
@@ -512,7 +536,68 @@ bool is_music_playing()
   return digitalRead(GPIO_MUSIC_IN) == HIGH;
 }
 
+/**
+ * MQTT helpers
+ ********************************************************************************/
 
+void setupMQTT()
+{
+  if(is_mqtt_enabled())
+  {
+    mqtt.setServer(settings.mqtt_server, DEFAULT_MQTT_PORT);
+    logger.info("MQTT enabled at %s:%i", settings.mqtt_server, DEFAULT_MQTT_PORT);
+  }
+}
+
+
+bool is_mqtt_enabled()
+{
+  return strcmp(settings.mqtt_server, "0.0.0.0") != 0;
+}
+
+void mqtt_connect()
+{
+  while (!mqtt.connected())
+  {
+    Serial.print("Connect to MQTT server...");
+    if (mqtt.connect("ESP8266Client"))
+    {
+      Serial.println("OK");
+    }
+    else
+    {
+      Serial.print("Err: ");
+      Serial.println(mqtt.state());
+      Serial.println("Retry in 5s...");
+      delay(5000);
+    }
+  }
+}
+
+void mqtt_loop()
+{
+  if(is_mqtt_enabled())
+  {
+    // MQTT reconnection
+    if(!mqtt.loop())
+    {
+      mqtt_connect();
+    }
+  }
+}
+
+void mqtt_publish(char* event)
+{
+  if(is_mqtt_enabled())
+  {
+    snprintf(buffer, BUF_SIZE, "{ \"event\": \"%s\" }", event);
+    logger.debug("Sending MQTT payload '%s' on topic %s", buffer, DEFAULT_MQTT_TOPIC);
+    if(!mqtt.publish(DEFAULT_MQTT_TOPIC, buffer, true))
+    {
+      Serial.println("MQTT publish failed");
+    }
+  }
+}
 
 /**
  * Time helpers 
@@ -638,7 +723,6 @@ void setupNTP()
   waitForSync(60); // 60s timeout on initial NTP request
 }
 
-
 void setup()
 {
   WiFiManager wifiManager;
@@ -703,12 +787,14 @@ void setup()
 
   setupDisplays();
   setupNTP();
+  setupMQTT();
 }
 
 void loop()
 {
   server.handleClient();
   events();  // EZTime events
+  mqtt_loop();
 
   if(isButtonPressed())
   {
@@ -717,14 +803,14 @@ void loop()
     {
         state = STATE_ON;
         light_on(255);
-        // TODO mqtt on
+        mqtt_publish("on");
     }
     else
     {
         state = STATE_OFF;
         light_off();
         music_off();
-        // TODO mqtt off
+        mqtt_publish("off");
     }
   } 
   else if(state >= STATE_RING)
@@ -735,6 +821,7 @@ void loop()
     {
       logger.debug("swtcih ring chime");
       state = STATE_RING_CHIME;
+      mqtt_publish("alarm-chime");
     }
 
     if(state == STATE_RING_CHIME && alarm_duration >= (settings.alarm_chime_delay+settings.alarm_buzzer_delay)*1000)
@@ -742,6 +829,7 @@ void loop()
       logger.debug("swtcih ring chime");
       state = STATE_RING_BUZZER;
       music_off();
+      mqtt_publish("alarm-buzzer");
     }
 
     ring();
@@ -756,6 +844,7 @@ void loop()
       if(tm.Wday != SUNDAY && tm.Wday != SATURDAY)
       {
         alarm();
+        mqtt_publish("alarm");
       }
     }
   }
