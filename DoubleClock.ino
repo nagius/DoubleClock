@@ -544,6 +544,7 @@ void setupMQTT()
 {
   if(is_mqtt_enabled())
   {
+    tzA.setMsg("MQTT");
     mqtt.setServer(settings.mqtt_server, DEFAULT_MQTT_PORT);
     logger.info("MQTT enabled at %s:%i", settings.mqtt_server, DEFAULT_MQTT_PORT);
   }
@@ -606,7 +607,7 @@ void mqtt_publish(char* event)
 
 void alarm()
 {
-  if(state != STATE_RING)
+  if(state == STATE_ON || state == STATE_OFF)
   {
     logger.info("Alarm trigerred");
     state = STATE_RING;
@@ -643,11 +644,6 @@ void ring()
 
 void refresh_displays()
 {
-    if(is_music_playing())
-      logger.debug("pusic on");
-    
-    logger.debug("state=%d", state);
-      
     //logger.info("Dublin time: %s", Ireland.dateTime().c_str());
     //logger.info("Madrid time: %s", Spain.dateTime().c_str());
  //   Serial.println("UTC RFC822:           " + UTC.dateTime(RFC822));
@@ -661,8 +657,8 @@ void refresh_displays()
     //logger.info("%i:%i %s", Spain.hour(), Spain.minute(), Spain.dateTime(RFC822));
 
     if(state >= STATE_RING) {
-      tzA.setMsg("WAKE UP    ");
-      tzB.setMsg("    Today is " + Ireland.day());  // TODO verfifier syntaxe
+      tzA.setMsg("WAKE UP   ");
+      tzB.setMsg(" today is " + dayStr(Ireland.weekday()) + "  ");
     } else {
       tzA.setMsg(Ireland.dateTime("T"));
       tzB.setMsg(Spain.dateTime("T"));
@@ -715,6 +711,7 @@ void setupDisplays()
 
 void setupNTP()
 {
+  tzA.setMsg("NTP");
   Ireland.setLocation("Europe/London");
   Spain.setLocation("Europe/Madrid");
   //setInterval(300);  // 5 minutes  - default 30 minutes
@@ -742,6 +739,7 @@ void setup()
   pinMode(GPIO_BUTTON, INPUT_PULLUP);
   pinMode(GPIO_LIGHT, OUTPUT);
   light_off();
+  setupDisplays();
 
     
   // Load settigns from flash
@@ -757,6 +755,7 @@ void setup()
   wifiManager.addParameter(&http_password);
   
   // Connect to Wifi or ask for SSID
+  tzA.setMsg("WIFI");
   wifiManager.autoConnect("DoubleClock");
 
   // Save new configuration set by captive portal
@@ -785,7 +784,6 @@ void setup()
   
   logger.info("HTTP server started.");
 
-  setupDisplays();
   setupNTP();
   setupMQTT();
 }
