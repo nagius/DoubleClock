@@ -31,9 +31,10 @@
 
 
 // Internal constant
+#define VERSION "1.3"
 #define AUTHBASIC_LEN 21        // Login or password 20 char max
 #define BUF_SIZE 256            // Used for string buffers
-#define VERSION "1.3"
+#define PWMRANGE 255 // Max value for pwm ouptut
 
 #define STATE_OFF 1             // Nothing
 #define STATE_ON 2              // Light on, no alarm
@@ -41,6 +42,7 @@
 #define STATE_RING_CHIME 4      // Alarm trigerred with lights on and music A
 #define STATE_RING_BUZZER 5     // Alarm trigerred with lights on and music B
 
+// GPIO configuration
 #define DISP1_ADDRESS 0x72  // 7 segments
 #define DISP2_ADDRESS 0x73  // 7 segments
 #define DISP3_ADDRESS 0x74  // 13 segments
@@ -53,8 +55,11 @@
 #define GPIO_MUSIC_IN 10     // SD3
 #define GPIO_LIGHT_SENSOR A0 // ADC0
 
-#define PWMRANGE 255 // 1023
+// Behavior configuration
 #define RISING_TIME 180 // seconde
+#define ADC_MIN_THRESHOLD 300  // mV from photoresistor in darkness
+#define ADC_MAX_THRESHOLD 1000 // mV from photoresistor in sunlight
+
 
 struct ST_SETTINGS {
   bool debug;
@@ -538,6 +543,35 @@ bool is_music_playing()
   return digitalRead(GPIO_MUSIC_IN) == HIGH;
 }
 
+// Return the ideal brightness for the display between 0 (min) and 15 (max)
+// based on the photoresistor value
+uint8_t get_brightness()
+{
+  // Sensor in is the dark at 300mV and full light at 1024mV
+  // Convert mV to brightness level with affine function y=ax+b
+  // Low point (MIN, 0); high point (MAX, 15)
+  
+  // a = (y2 – y1)/(x2 – x1)
+  float a = (15.0 - 0.0) / ( ADC_MAX_THRESHOLD - ADC_MIN_THRESHOLD ) ;
+
+  // b = y1 - ax1
+  float b = 0.0 -(a * ADC_MIN_THRESHOLD);
+  
+  int x = analogRead(A0);
+  float y = ((a * x) + b);
+  
+  if(y<0)
+  {
+    return 0;
+  }
+  else if(y>15)
+  {
+    return 15;
+  }
+  return (int)y;
+}
+
+
 /**
  * MQTT helpers
  ********************************************************************************/
@@ -682,27 +716,33 @@ void refresh_displays()
 void setupDisplays()
 {
   displayA.begin(DISP3_ADDRESS);
-  displayA.setBrightness(0);
   displayA.clear();
   displayA.writeDisplay();
   tzA = Display(displayA);
 
   displayB.begin(DISP4_ADDRESS);
-  displayB.setBrightness(0);
   displayB.clear();
   displayB.writeDisplay();
   tzB = Display(displayB);
 
   timeA.begin(DISP2_ADDRESS);
-  timeA.setBrightness(0);
   timeA.clear();
   timeA.writeDisplay();
 
   timeB.begin(DISP1_ADDRESS);
-  timeB.setBrightness(0);
   timeB.clear();
   timeB.writeDisplay();
-  
+
+  setBrightness();
+}
+
+void setBrightness()
+{
+  uint8_t b = get_brightness();
+  displayA.setBrightness(b);
+  displayB.setBrightness(b);    
+  timeA.setBrightness(b);
+  timeB.setBrightness(b);    
 }
 
 void setupNTP()
@@ -846,6 +886,7 @@ void loop()
   long current_millis = millis();
   if(current_millis - last_display_refresh > 1000)
   {
+    setBrightness();
     refresh_displays();
     
     // update the timing variable
