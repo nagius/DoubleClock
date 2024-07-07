@@ -1,14 +1,14 @@
 // Double clock
 
 // TODO rename Ireland Span TZA TZB
-// TODO move Settings to other file .h
+// Fix chime/buzzer when disabled
 // TODO add mqtt dans wifimanager
 // Siplify settings with https://www.arduino.cc/reference/en/libraries/wifimqttmanager-library/
-
 
 #include <ESP8266WiFi.h>         
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
+#include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <WiFiManager.h>         // See https://github.com/tzapu/WiFiManager for documentation
 #include <EEPROM.h>
@@ -19,6 +19,11 @@
 #include <Adafruit_GFX.h>
 #include "Adafruit_LEDBackpack.h"
 
+// Behavior configuration
+#define RISING_TIME 180         // seconds to full britghness when alarm triggers
+#define ADC_MIN_THRESHOLD 300   // mV from photoresistor in darkness
+#define ADC_MAX_THRESHOLD 1000  // mV from photoresistor in sunlight
+#define ALARM_COUNT 2           // Number of alarms
 
 // Default value
 #define DEFAULT_LOGIN ""        // AuthBasic credentials
@@ -33,8 +38,8 @@
 // Internal constant
 #define VERSION "1.3"
 #define AUTHBASIC_LEN 21        // Login or password 20 char max
-#define BUF_SIZE 256            // Used for string buffers
-#define PWMRANGE 255 // Max value for pwm ouptut
+#define BUF_SIZE 512            // Used for string buffers
+#define PWMRANGE 255            // Max value for pwm ouptut
 
 #define STATE_OFF 1             // Nothing
 #define STATE_ON 2              // Light on, no alarm
@@ -43,23 +48,23 @@
 #define STATE_RING_BUZZER 5     // Alarm trigerred with lights on and music B
 
 // GPIO configuration
-#define DISP1_ADDRESS 0x72  // 7 segments
-#define DISP2_ADDRESS 0x73  // 7 segments
-#define DISP3_ADDRESS 0x74  // 13 segments
-#define DISP4_ADDRESS 0x75  // 13 segments
-#define GPIO_BUTTON 9        // SD2
-#define GPIO_LIGHT 14        // D5
-#define GPIO_MUSIC_CHIME 12  // D6
-#define GPIO_MUSIC_BUZZER 13 // D7
-#define GPIO_MUSIC_OFF 15    // D8
-#define GPIO_MUSIC_IN 10     // SD3
-#define GPIO_LIGHT_SENSOR A0 // ADC0
+#define DISP1_ADDRESS 0x72      // 7 segments
+#define DISP2_ADDRESS 0x73      // 7 segments
+#define DISP3_ADDRESS 0x74      // 13 segments
+#define DISP4_ADDRESS 0x75      // 13 segments
+#define GPIO_BUTTON 9           // SD2
+#define GPIO_LIGHT 14           // D5
+#define GPIO_MUSIC_CHIME 12     // D6
+#define GPIO_MUSIC_BUZZER 13    // D7
+#define GPIO_MUSIC_OFF 15       // D8
+#define GPIO_MUSIC_IN 10        // SD3
+#define GPIO_LIGHT_SENSOR A0    // ADC0
 
-// Behavior configuration
-#define RISING_TIME 180 // seconde
-#define ADC_MIN_THRESHOLD 300  // mV from photoresistor in darkness
-#define ADC_MAX_THRESHOLD 1000 // mV from photoresistor in sunlight
-
+struct ST_ALARM {
+  uint8_t hour;
+  uint8_t minute;
+  bool days[7];     // 7 days a week: 0-Monday..6-Sunday
+};
 
 struct ST_SETTINGS {
   bool debug;
@@ -67,24 +72,11 @@ struct ST_SETTINGS {
   char login[AUTHBASIC_LEN];
   char password[AUTHBASIC_LEN];
   char mqtt_server[AUTHBASIC_LEN];  // TODO use right size for DNS
-  uint8_t alarm_hr;
-  uint8_t alarm_min;
+  uint16_t mqtt_port;
   uint16_t alarm_chime_delay;
   uint16_t alarm_buzzer_delay;
+  ST_ALARM alarms[ALARM_COUNT];
 };
-
-struct ST_SETTINGS_FLAGS {
-  bool debug;
-  bool serial;
-  bool login;
-  bool password;
-  bool mqtt_server;
-  bool alarm_hr;
-  bool alarm_min;
-  bool alarm_chime_delay;
-  bool alarm_buzzer_delay;
-};
-
 
 // Global variables
 WiFiClient wifiClient;
@@ -94,6 +86,9 @@ Logger logger = Logger();
 ST_SETTINGS settings;
 bool shouldSaveConfig = false;    // Flag for WifiManager custom parameters
 char buffer[BUF_SIZE];            // Global char* to avoir multiple String concatenation which causes RAM fragmentation
+StaticJsonDocument<BUF_SIZE> json_output;
+
+
 Timezone Ireland;
 Timezone Spain;
 
@@ -217,8 +212,8 @@ void setupMQTT()
   if(is_mqtt_enabled())
   {
     tzA.setMsg("MQTT");
-    mqtt.setServer(settings.mqtt_server, DEFAULT_MQTT_PORT);
-    logger.info("MQTT enabled at %s:%i", settings.mqtt_server, DEFAULT_MQTT_PORT);
+    mqtt.setServer(settings.mqtt_server, settings.mqtt_port);
+    logger.info("MQTT enabled at %s:%i", settings.mqtt_server, settings.mqtt_port);
   }
 }
 
@@ -411,7 +406,6 @@ void setup()
   light_off();
   setupDisplays();
 
-    
   // Load settigns from flash
   loadSettings();
   
@@ -510,11 +504,17 @@ void loop()
     // Trigger alarm
     tmElements_t tm;
     breakTime(Ireland.now(), tm);  // use breakTime to get hour, minute and second in an atomic way
-    if(tm.Hour == settings.alarm_hr && tm.Minute == settings.alarm_min && tm.Second == 00)
+    if(tm.Second == 00) // Only trigger alarm during one second per minute
     {
-      if(tm.Wday != SUNDAY && tm.Wday != SATURDAY)
+      // today is Monday = 0 Sunday = 7; tm.Wday is Sunday = 1
+      int today = (tm.Wday + 5) % 7;
+      for(int i; i<ALARM_COUNT; i++)
       {
-        alarm();
+        if(settings.alarms[i].days[today] && settings.alarms[i].hour == tm.Hour && settings.alarms[i].minute == tm.Minute)
+        {
+          alarm();
+          break;
+        }
       }
     }
   }

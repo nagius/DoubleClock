@@ -57,9 +57,6 @@ void loadSettings()
     logger.setDebug(settings.debug);
     logger.setSerial(settings.serial);
     logger.info("Loaded settings from flash");
-
-    // Display loaded setting on debug
-    logger.debug("FLASH: %s", getJSONSettings());
   }
   else
   {
@@ -74,10 +71,18 @@ void setDefaultSettings()
     strcpy(settings.login, DEFAULT_LOGIN);
     strcpy(settings.password, DEFAULT_PASSWORD);
     strcpy(settings.mqtt_server, DEFAULT_MQTT_SERVER);
+    settings.mqtt_port = DEFAULT_MQTT_PORT;
     settings.debug = true;
     settings.serial = true;
-    settings.alarm_hr = 255;
-    settings.alarm_min = 255;
+    for (int i=0; i<ALARM_COUNT; i++)
+    {
+      settings.alarms[i].hour = 0;
+      settings.alarms[i].minute = 0;
+      for(int j=0; j<7; j++)
+      {
+        settings.alarms[i].days[j] = false;
+      }
+    }
     settings.alarm_chime_delay = DEFAULT_DELAY;
     settings.alarm_buzzer_delay = DEFAULT_DELAY;
 }

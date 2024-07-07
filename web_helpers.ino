@@ -41,6 +41,7 @@ void handleGETDebug()
   server.send(200, F("text/plain"), logger.getLog());
 }
 
+
 /**
  * GET /settings
  */
@@ -49,7 +50,7 @@ void handleGETSettings()
   if(!isAuthBasicOK())
     return;
  
-  server.send(200, F("application/json"), getJSONSettings());
+  sendJSONSettings();
 }
 
 /**
@@ -61,174 +62,162 @@ void handleGETSettings()
  */
 void handlePOSTSettings()
 {
-  ST_SETTINGS st;
-  ST_SETTINGS_FLAGS isNew = { false, false, false, false, false, false, false };
+  StaticJsonDocument<BUF_SIZE> json;
 
   if(!isAuthBasicOK())
     return;
 
-   // Check if args have been supplied
-  if(server.args() == 0)
+  DeserializationError error = deserializeJson(json, server.arg("plain"));
+  if(error)
   {
-    server.send(400, F("test/plain"), F("Invalid parameters\r\n"));
+    sendJSONError("deserialize failed: %s", error.c_str());
     return;
   }
 
-  // Parse args   
-  for(uint8_t i=0; i<server.args(); i++ ) 
+  if(json.containsKey("debug"))
   {
-    String param = server.argName(i);
-    if(param == "debug")
-    {
-      st.debug = server.arg(i).equalsIgnoreCase("true");
-      isNew.debug = true;
-    }
-    else if(param == "serial")
-    {
-      st.serial = server.arg(i).equalsIgnoreCase("true");
-      isNew.serial = true;
-    }
-    else if(param == "login")
-    {
-      server.arg(i).toCharArray(st.login, AUTHBASIC_LEN);
-      isNew.login = true;
-    }
-    else if(param == "password")
-    {
-      server.arg(i).toCharArray(st.password, AUTHBASIC_LEN);
-      isNew.password = true;
-    }
-    else if(param == "mqtt-server")
-    {
-      server.arg(i).toCharArray(st.mqtt_server, AUTHBASIC_LEN);
-      isNew.mqtt_server = true;
-    }
-    else if(param == "hour")
-    {
-      uint8_t hour = server.arg(i).toInt();
-      if(hour>= 0 && hour <=23)
-      {
-        st.alarm_hr = hour;
-        isNew.alarm_hr = true;
-      }
-      else
-      {
-        server.send(400, F("test/plain"), F("Invalid hours\r\n"));
-        return;
-      }
-    }
-    else if(param == "minutes")
-    {
-      uint8_t min = server.arg(i).toInt();
-      if(min>= 0 && min <=59)
-      {
-        st.alarm_min = min;
-        isNew.alarm_min = true;
-      }
-      else
-      {
-        server.send(400, F("test/plain"), F("Invalid minutes\r\n"));
-        return;
-      }
-    }
-    else if(param == "delay-chime")
-    {
-      uint16_t seconds = server.arg(i).toInt();
-      if(seconds>= 0)
-      {
-        st.alarm_chime_delay = seconds;
-        isNew.alarm_chime_delay = true;
-      }
-      else
-      {
-        server.send(400, F("test/plain"), F("Invalid chime delay\r\n"));
-        return;
-      }
-    }
-    else if(param == "delay-buzzer")
-    {
-      uint16_t seconds = server.arg(i).toInt();
-      if(seconds>= 0)
-      {
-        st.alarm_buzzer_delay = seconds;
-        isNew.alarm_buzzer_delay = true;
-      }
-      else
-      {
-        server.send(400, F("test/plain"), F("Invalid buzzer delay\r\n"));
-        return;
-      }
-    }
-    else
-    {
-      server.send(400, F("text/plain"), "Unknown parameter: " + param + "\r\n");
-      return;
-    }
+    settings.debug = json["debug"];
+    logger.setDebug(settings.debug);
+    logger.info("Updated debug to %s.", settings.debug ? "true" : "false");
   }
 
-  // Save changes
-  if(isNew.debug)
+  if(json.containsKey("serial"))
   {
-    settings.debug = st.debug;
-    logger.setDebug(st.debug);
-    logger.info("Updated debug to %s.", st.debug ? "true" : "false");
+    settings.serial = json["serial"];
+    logger.setSerial(settings.serial);
+    logger.info("Updated serial to %s.", settings.serial ? "true" : "false");
   }
 
-  if(isNew.serial)
+  if(json.containsKey("login"))
   {
-    settings.serial = st.serial;
-    logger.setSerial(st.serial);
-    logger.info("Updated serial to %s.", st.serial ? "true" : "false");
+    const char* login = json["login"];
+    strncpy(settings.login, login, AUTHBASIC_LEN);
+    logger.info("Updated login to \"%s\".", settings.login);
   }
 
-  if(isNew.login)
+  if(json.containsKey("password"))
   {
-    strcpy(settings.login, st.login);
-    logger.info("Updated login to \"%s\".", st.login);
-  }
-
-  if(isNew.password)
-  {
-    strcpy(settings.password, st.password);
+    const char* password = json["password"];
+    strncpy(settings.password, password, AUTHBASIC_LEN);
     logger.info("Updated password.");
   }
 
-  if(isNew.mqtt_server)
+  if(json.containsKey("delays"))
   {
-    strcpy(settings.mqtt_server, st.mqtt_server);
+    JsonObject delays = json["delays"];
+    if(delays.containsKey("chime"))
+    {
+      const uint16_t seconds = delays["chime"];
+      if(seconds>= 0)
+      {
+        settings.alarm_chime_delay = seconds;
+        logger.info("Updated chime delay to %i.", seconds);
+      }
+      else
+      {
+        sendJSONError("Invalid chime delay");
+        return;
+      }
+    }
+
+    if(delays.containsKey("buzzer"))
+    {
+      const uint16_t seconds = delays["buzzer"];
+      if(seconds>= 0)
+      {
+        settings.alarm_buzzer_delay = seconds;
+        logger.info("Updated buzzer delay to %i.", seconds);
+      }
+      else
+      {
+        sendJSONError("Invalid buzzer delay");
+        return;
+      }
+    }
+  }
+  
+  if(json.containsKey("mqtt"))
+  {
+    JsonObject mqtt = json["mqtt"];
+    if(mqtt.containsKey("server"))
+    {
+      const char* server = mqtt["server"];
+      strncpy(settings.mqtt_server, server, AUTHBASIC_LEN);
+    }
+
+    if(mqtt.containsKey("port"))
+    {
+      const uint16_t port = mqtt["port"];
+      settings.mqtt_port = port;
+    }
+
     setupMQTT();
-    logger.info("Updated MQTT serer to \"%s\".", st.mqtt_server);
   }
 
-  if(isNew.alarm_hr)
+  if(json.containsKey("alarms"))
   {
-    settings.alarm_hr = st.alarm_hr;
-    logger.info("Updated alarm hours.");
-  }
+    JsonArray alarms = json["alarms"];
+    if(alarms.size()>ALARM_COUNT)
+    {
+      sendJSONError("Invalid number of alarms");
+      return;
+    }
 
-  if(isNew.alarm_min)
-  {
-    settings.alarm_min = st.alarm_min;
-    logger.info("Updated alarm minutes.");
-  }
+    for(int i=0; i<alarms.size(); i++)
+    {
+      if(alarms[i].containsKey("hour"))
+      {
+        const int hour = alarms[i]["hour"];
+        if(hour>= 0 && hour <=23)
+        {
+          settings.alarms[i].hour = hour;
+          logger.info("Updated alarm #%d hour to %d.", i, hour);
+        }
+        else
+        {
+          sendJSONError("Invalid hour for alarm #%d", i);
+          return;
+        }
+      }
 
-  if(isNew.alarm_chime_delay)
-  {
-    settings.alarm_chime_delay = st.alarm_chime_delay;
-    logger.info("Updated chime delay.");
-  }
+      if(alarms[i].containsKey("minute"))
+      {
+        const int minute = alarms[i]["minute"];
+        if(minute>= 0 && minute <=59)
+        {
+          settings.alarms[i].minute = minute;
+          logger.info("Updated alarm #%d minute to %d.", i, minute);
+        }
+        else
+        {
+          sendJSONError("Invalid minute for alarm #%d", i);
+          return;
+        }
+      }
 
-  if(isNew.alarm_buzzer_delay)
-  {
-    settings.alarm_buzzer_delay = st.alarm_buzzer_delay;
-    logger.info("Updated buzzer delay.");
-  }
+      if(alarms[i].containsKey("days"))
+      {
+        JsonArray days = alarms[i]["days"];
+        if(days.size() != 7)
+        {
+          sendJSONError("Invalid number of days for alarm #%d", i);
+          return;
+        }
 
+        for(int j=0; j<7; j++)
+        {
+          const bool day = days[j];
+          settings.alarms[i].days[j] = day;
+        }
+        logger.info("Updated alarm #%d days", i);
+      }
+    }
+  }
 
   saveSettings();
 
   // Reply with current settings
-  server.send(201, F("application/json"), getJSONSettings());
+  sendJSONSettings();
 }
 
 /**
@@ -276,20 +265,45 @@ bool isAuthBasicOK()
   return true;
 }
 
-char* getJSONSettings()
+void sendJSONSettings()
 {
-  //Generate JSON 
-  snprintf(buffer, BUF_SIZE, "{ \"login\": \"%s\", \"password\": \"<hidden>\", \"mqtt-server\": \"%s\", \"debug\": %s, \"serial\": %s, \"hour\": %i, \"minutes\": %i, \"delay-chime\": %i, \"delay-buzzer\": %i }\r\n",
-    settings.login,
-    settings.mqtt_server,
-    settings.debug ? "true" : "false",
-    settings.serial ? "true" : "false",
-    settings.alarm_hr,
-    settings.alarm_min,
-    settings.alarm_chime_delay,
-    settings.alarm_buzzer_delay
-  );
+  json_output.clear();
+  json_output["login"] = settings.login;
+  json_output["debug"] = settings.debug;
+  json_output["serial"] = settings.serial;
+  json_output["delays"]["chime"] = settings.alarm_chime_delay;
+  json_output["delays"]["buzzer"] = settings.alarm_buzzer_delay;
+  json_output["mqtt"]["server"] = settings.mqtt_server;
+  json_output["mqtt"]["port"] = settings.mqtt_port;
 
-  return buffer;
+  for(int i=0; i<ALARM_COUNT; i++)
+  {
+    json_output["alarms"][i]["hour"] = settings.alarms[i].hour;
+    json_output["alarms"][i]["minute"] = settings.alarms[i].minute;
+    for(int j=0; j<7; j++)
+    {
+      json_output["alarms"][i]["days"][j] = settings.alarms[i].days[j];
+    }
+  }
+
+  serializeJson(json_output, buffer);
+  server.send(200, "application/json", buffer);
 }
+
+void sendJSONError(const char* fmt, ...)
+{
+  char msg[BUF_SIZE];
+
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(msg, BUF_SIZE, fmt, ap);
+  va_end(ap);
+
+  json_output.clear();
+  json_output["error"] = msg;
+  serializeJson(json_output, buffer);
+  server.send(400, "application/json", buffer);
+}
+
+
 
