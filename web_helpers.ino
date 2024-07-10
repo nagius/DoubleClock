@@ -246,6 +246,28 @@ void handlePOSTReset()
   ESP.restart();
 }
 
+/**
+ *  GET *
+ */
+bool handleFileRead(String path)
+{
+  // If a folder is requested, send the index file
+  if (path.endsWith("/")) path += "index.html";
+
+  if (LittleFS.exists(path))
+  {
+    String contentType = getContentType(path);
+
+    File file = LittleFS.open(path, "r");
+    size_t sent = server.streamFile(file, contentType);
+    file.close();
+    logger.debug("Sent %d bytes for file %s", sent, path.c_str());
+    return true;
+  }
+
+  return false;
+}
+
 
 /**
  * WEB helpers 
@@ -305,5 +327,12 @@ void sendJSONError(const char* fmt, ...)
   server.send(400, "application/json", buffer);
 }
 
-
+String getContentType(String filename)
+{
+  if (filename.endsWith(".html")) return "text/html";
+  else if (filename.endsWith(".css")) return "text/css";
+  else if (filename.endsWith(".js")) return "application/javascript";
+  else if (filename.endsWith(".ico")) return "image/x-icon";
+  return "text/plain";
+}
 

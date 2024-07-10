@@ -4,6 +4,7 @@
 // Fix chime/buzzer when disabled
 // TODO add mqtt dans wifimanager
 // Siplify settings with https://www.arduino.cc/reference/en/libraries/wifimqttmanager-library/
+// TODO check mDNS
 
 #include <ESP8266WiFi.h>         
 #include <DNSServer.h>
@@ -18,12 +19,14 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include "Adafruit_LEDBackpack.h"
+#include <LittleFS.h>
 
 // Behavior configuration
 #define RISING_TIME 180         // seconds to full britghness when alarm triggers
 #define ADC_MIN_THRESHOLD 300   // mV from photoresistor in darkness
 #define ADC_MAX_THRESHOLD 1000  // mV from photoresistor in sunlight
 #define ALARM_COUNT 2           // Number of alarms
+#define ALLOW_CORS_FOR_LOCAL_DEV
 
 // Default value
 #define DEFAULT_LOGIN ""        // AuthBasic credentials
@@ -405,9 +408,15 @@ void setup()
   pinMode(GPIO_LIGHT, OUTPUT);
   light_off();
   setupDisplays();
+  tzA.setMsg("BOOT");
 
   // Load settigns from flash
   loadSettings();
+  if(!LittleFS.begin())
+  {
+    logger.info("ERROR: LittleFS failed");
+    return;
+  }
   
   // Configure custom parameters
   WiFiManagerParameter http_login("htlogin", "HTTP Login", settings.login, AUTHBASIC_LEN);
@@ -436,13 +445,23 @@ void setup()
   logger.info("Connected. IP address: %s", WiFi.localIP().toString().c_str());
 
   // Setup HTTP handlers
+#ifdef ALLOW_CORS_FOR_LOCAL_DEV
+  server.enableCORS(true);
+  server.on("/settings", HTTP_OPTIONS, []() {
+    server.sendHeader("Access-Control-Allow-Headers", "*");
+    server.sendHeader("Access-Control-Allow-Methods", "POST,GET,OPTIONS");
+    server.send(204);
+ });
+#endif
   server.on("/", handleGETRoot );
   server.on("/debug", HTTP_GET, handleGETDebug);
   server.on("/settings", HTTP_GET, handleGETSettings);
   server.on("/settings", HTTP_POST, handlePOSTSettings);
   server.on("/reset", HTTP_POST, handlePOSTReset);
   server.onNotFound([]() {
-    server.send(404, "text/plain", "Not found\r\n");
+    // Serve arbitrary requested file from LittleFS if exist
+    if (!handleFileRead(server.uri()))
+      server.send(404, "text/plain", "Not found\r\n");
   });
   server.begin();
   
