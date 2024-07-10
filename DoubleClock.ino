@@ -1,6 +1,5 @@
 // Double clock
 
-// TODO rename Ireland Span TZA TZB
 // Fix chime/buzzer when disabled
 // TODO add mqtt dans wifimanager
 // Siplify settings with https://www.arduino.cc/reference/en/libraries/wifimqttmanager-library/
@@ -11,7 +10,7 @@
 #include <ESP8266WebServer.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
-#include <WiFiManager.h>         // See https://github.com/tzapu/WiFiManager for documentation
+#include <WiFiManager.h>              // See https://github.com/tzapu/WiFiManager for documentation
 #include <EEPROM.h>
 #include <ezTime.h>
 #include "Logger.h"
@@ -22,26 +21,28 @@
 #include <LittleFS.h>
 
 // Behavior configuration
-#define RISING_TIME 180         // seconds to full britghness when alarm triggers
-#define ADC_MIN_THRESHOLD 300   // mV from photoresistor in darkness
-#define ADC_MAX_THRESHOLD 1000  // mV from photoresistor in sunlight
-#define ALARM_COUNT 2           // Number of alarms
+#define RISING_TIME 180               // seconds to full britghness when alarm triggers
+#define ADC_MIN_THRESHOLD 300         // mV from photoresistor in darkness
+#define ADC_MAX_THRESHOLD 1000        // mV from photoresistor in sunlight
+#define ALARM_COUNT 2                 // Number of alarms
 #define ALLOW_CORS_FOR_LOCAL_DEV
 
 // Default value
-#define DEFAULT_LOGIN ""        // AuthBasic credentials
-#define DEFAULT_PASSWORD ""     // (default no auth)
-#define DEFAULT_DELAY 0         // Chime and buzzer disabled by default
+#define DEFAULT_LOGIN ""              // AuthBasic credentials
+#define DEFAULT_PASSWORD ""           // (default no auth)
+#define DEFAULT_DELAY 0               // Chime and buzzer disabled by default
 #define DEFAULT_MQTT_SERVER "0.0.0.0"
 #define DEFAULT_MQTT_PORT 1883
 #define DEFAULT_MQTT_TOPIC "doubleclock"
-#define DEFAULT_ALARM_TIMEOUT 1800 // 30 minutes
-
+#define DEFAULT_ALARM_TIMEOUT 1800    // 30 minutes
+#define DEFAULT_TIMEZONE_A "Europe/London"
+#define DEFAULT_TIMEZONE_B "Europe/Madrid"
 
 // Internal constant
-#define VERSION "1.3"
+#define VERSION "1.4"
 #define AUTHBASIC_LEN 21        // Login or password 20 char max
 #define BUF_SIZE 512            // Used for string buffers
+#define DNS_SIZE 63             // used for DNS names (should be 255 but 63 is enough)
 #define PWMRANGE 255            // Max value for pwm ouptut
 
 #define STATE_OFF 1             // Nothing
@@ -51,10 +52,10 @@
 #define STATE_RING_BUZZER 5     // Alarm trigerred with lights on and music B
 
 // GPIO configuration
-#define DISP1_ADDRESS 0x72      // 7 segments
-#define DISP2_ADDRESS 0x73      // 7 segments
-#define DISP3_ADDRESS 0x74      // 13 segments
-#define DISP4_ADDRESS 0x75      // 13 segments
+#define I2C_ADDR_TIME_A 0x73    // 7 segments
+#define I2C_ADDR_TIME_B 0x72    // 7 segments
+#define I2C_ADDR_TEXT_A 0x74    // 13 segments
+#define I2C_ADDR_TEXT_B 0x75    // 13 segments
 #define GPIO_BUTTON 9           // SD2
 #define GPIO_LIGHT 14           // D5
 #define GPIO_MUSIC_CHIME 12     // D6
@@ -67,6 +68,7 @@ struct ST_ALARM {
   uint8_t hour;
   uint8_t minute;
   bool days[7];     // 7 days a week: 0-Monday..6-Sunday
+  bool primary;     // Primary is tzA, seconday is tzB
 };
 
 struct ST_SETTINGS {
@@ -74,7 +76,7 @@ struct ST_SETTINGS {
   bool serial;
   char login[AUTHBASIC_LEN];
   char password[AUTHBASIC_LEN];
-  char mqtt_server[AUTHBASIC_LEN];  // TODO use right size for DNS
+  char mqtt_server[DNS_SIZE];
   uint16_t mqtt_port;
   uint16_t alarm_chime_delay;
   uint16_t alarm_buzzer_delay;
@@ -91,25 +93,20 @@ bool shouldSaveConfig = false;    // Flag for WifiManager custom parameters
 char buffer[BUF_SIZE];            // Global char* to avoir multiple String concatenation which causes RAM fragmentation
 StaticJsonDocument<BUF_SIZE> json_output;
 
-
-Timezone Ireland;
-Timezone Spain;
-
-Adafruit_AlphaNum4 displayA = Adafruit_AlphaNum4();
+Adafruit_AlphaNum4 alnumA = Adafruit_AlphaNum4();
+Adafruit_AlphaNum4 alnumB = Adafruit_AlphaNum4();
 Adafruit_7segment timeA = Adafruit_7segment();
-Display tzA = Display(displayA);
-Adafruit_AlphaNum4 displayB = Adafruit_AlphaNum4();
 Adafruit_7segment timeB = Adafruit_7segment();
-Display tzB = Display(displayB);
+Display textA = Display(alnumA);
+Display textB = Display(alnumB);
+Timezone tzA;
+Timezone tzB;
 
-long last_display_refresh = 0L;
-bool dot;
-
-// TODO move to struct
 uint8_t state = STATE_OFF;
-long alarm_start_time = 0;
-bool previous_button = false;
-// add alarm pointer ?
+long alarm_start_time = 0;        // counter for alarm delay
+bool previous_button = false;     // Used for debouncing
+long last_display_refresh = 0L;   // Timer to refresh displays every seconds
+bool dot;                         // Flip-flop for dot display
 
 
 /**
@@ -214,7 +211,7 @@ void setupMQTT()
 {
   if(is_mqtt_enabled())
   {
-    tzA.setMsg("MQTT");
+    textA.setMsg("MQTT");
     mqtt.setServer(settings.mqtt_server, settings.mqtt_port);
     logger.info("MQTT enabled at %s:%i", settings.mqtt_server, settings.mqtt_port);
   }
@@ -230,16 +227,14 @@ void mqtt_connect()
 {
   while (!mqtt.connected())
   {
-    Serial.print("Connect to MQTT server...");
+    logger.info("Connecting to MQTT server...");
     if (mqtt.connect("ESP8266Client"))
     {
-      Serial.println("OK");
+      logger.info("MQTT connected.");
     }
     else
     {
-      Serial.print("Err: ");
-      Serial.println(mqtt.state());
-      Serial.println("Retry in 5s...");
+      logger.info("MQTT ERROR (%i). Retry in 5s...", mqtt.state());
       delay(5000);
     }
   }
@@ -265,7 +260,7 @@ void mqtt_publish(char* event)
     logger.debug("Sending MQTT payload '%s' on topic %s", buffer, DEFAULT_MQTT_TOPIC);
     if(!mqtt.publish(DEFAULT_MQTT_TOPIC, buffer, true))
     {
-      Serial.println("MQTT publish failed");
+      logger.info("MQTT publish failed");
     }
   }
 }
@@ -326,22 +321,22 @@ void ring()
 void refresh_displays()
 {
     if(state >= STATE_RING) {
-      tzA.setMsg("WAKE UP   ");
-      tzB.setMsg(" today is " + dayStr(Ireland.weekday()) + "  ");
+      textA.setMsg("WAKE UP   ");
+      textB.setMsg(" today is " + dayStr(tzA.weekday()) + "  ");
     } else {
-      tzA.setMsg(Ireland.dateTime("T"));
-      tzB.setMsg(Spain.dateTime("T"));
+      textA.setMsg(tzA.dateTime("T"));
+      textB.setMsg(tzB.dateTime("T"));
     }
-    tzA.tick();
-    tzB.tick();
+    textA.tick();
+    textB.tick();
 
     dot=!dot;
   
-    timeA.print(Ireland.hour()*100 + Ireland.minute());
+    timeA.print(tzA.hour()*100 + tzA.minute());
     timeA.drawColon(dot);
     timeA.writeDisplay();
 
-    timeB.print(Spain.hour()*100 + Spain.minute());
+    timeB.print(tzB.hour()*100 + tzB.minute());
     timeB.drawColon(dot);
     timeB.writeDisplay();
 }
@@ -349,21 +344,21 @@ void refresh_displays()
 
 void setupDisplays()
 {
-  displayA.begin(DISP3_ADDRESS);
-  displayA.clear();
-  displayA.writeDisplay();
-  tzA = Display(displayA);
+  alnumA.begin(I2C_ADDR_TEXT_A);
+  alnumA.clear();
+  alnumA.writeDisplay();
+  textA = Display(alnumA);
 
-  displayB.begin(DISP4_ADDRESS);
-  displayB.clear();
-  displayB.writeDisplay();
-  tzB = Display(displayB);
+  alnumB.begin(I2C_ADDR_TEXT_B);
+  alnumB.clear();
+  alnumB.writeDisplay();
+  textB = Display(alnumB);
 
-  timeA.begin(DISP2_ADDRESS);
+  timeA.begin(I2C_ADDR_TIME_A);
   timeA.clear();
   timeA.writeDisplay();
 
-  timeB.begin(DISP1_ADDRESS);
+  timeB.begin(I2C_ADDR_TIME_B);
   timeB.clear();
   timeB.writeDisplay();
 
@@ -373,19 +368,19 @@ void setupDisplays()
 void setBrightness()
 {
   uint8_t b = get_brightness();
-  displayA.setBrightness(b);
-  displayB.setBrightness(b);    
+  alnumA.setBrightness(b);
+  alnumB.setBrightness(b);    
   timeA.setBrightness(b);
   timeB.setBrightness(b);    
 }
 
 void setupNTP()
 {
-  tzA.setMsg("NTP");
-  Ireland.setLocation("Europe/London");
-  Spain.setLocation("Europe/Madrid");
-  setDebug(INFO);
-  waitForSync(60); // 60s timeout on initial NTP request
+  textA.setMsg("NTP");
+  tzA.setLocation(DEFAULT_TIMEZONE_A);
+  tzB.setLocation(DEFAULT_TIMEZONE_B);
+  setDebug(INFO);   // ezTime debug
+  waitForSync(60);  // 60s timeout on initial NTP request
 }
 
 void setup()
@@ -394,6 +389,12 @@ void setup()
   
   Serial.begin(115200);
   EEPROM.begin(512);
+  if(!LittleFS.begin())
+  {
+    logger.info("ERROR: LittleFS failed");
+    return;
+  }
+
   logger.info("DoubleClock version %s started.", VERSION);
 
   // Setup GPIO
@@ -408,15 +409,9 @@ void setup()
   pinMode(GPIO_LIGHT, OUTPUT);
   light_off();
   setupDisplays();
-  tzA.setMsg("BOOT");
 
   // Load settigns from flash
   loadSettings();
-  if(!LittleFS.begin())
-  {
-    logger.info("ERROR: LittleFS failed");
-    return;
-  }
   
   // Configure custom parameters
   WiFiManagerParameter http_login("htlogin", "HTTP Login", settings.login, AUTHBASIC_LEN);
@@ -428,7 +423,7 @@ void setup()
   wifiManager.addParameter(&http_password);
   
   // Connect to Wifi or ask for SSID
-  tzA.setMsg("WIFI");
+  textA.setMsg("WIFI");
   wifiManager.autoConnect("DoubleClock");
 
   // Save new configuration set by captive portal
@@ -522,7 +517,7 @@ void loop()
   {
     // Trigger alarm
     tmElements_t tm;
-    breakTime(Ireland.now(), tm);  // use breakTime to get hour, minute and second in an atomic way
+    breakTime(tzA.now(), tm);  // use breakTime to get hour, minute and second in an atomic way
     if(tm.Second == 00) // Only trigger alarm during one second per minute
     {
       // today is Monday = 0 Sunday = 7; tm.Wday is Sunday = 1
