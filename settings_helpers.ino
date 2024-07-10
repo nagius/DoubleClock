@@ -78,6 +78,7 @@ void setDefaultSettings()
     {
       settings.alarms[i].hour = 0;
       settings.alarms[i].minute = 0;
+      settings.alarms[i].primary = true;
       for(int j=0; j<7; j++)
       {
         settings.alarms[i].days[j] = false;

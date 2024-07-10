@@ -195,6 +195,11 @@ void handlePOSTSettings()
         }
       }
 
+      if(alarms[i].containsKey("primary"))
+      {
+        settings.alarms[i].primary = alarms[i]["primary"];
+      }
+
       if(alarms[i].containsKey("days"))
       {
         JsonArray days = alarms[i]["days"];
@@ -302,6 +307,7 @@ void sendJSONSettings()
   {
     json_output["alarms"][i]["hour"] = settings.alarms[i].hour;
     json_output["alarms"][i]["minute"] = settings.alarms[i].minute;
+    json_output["alarms"][i]["primary"] = settings.alarms[i].primary;
     for(int j=0; j<7; j++)
     {
       json_output["alarms"][i]["days"][j] = settings.alarms[i].days[j];

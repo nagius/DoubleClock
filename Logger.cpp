@@ -38,6 +38,8 @@ void Logger::setDebug(bool d)
 void Logger::setSerial(bool d)
 {
   enableSerial = d;
+  if(enableSerial)
+    Serial.println("");
 }
 
 void Logger::debug(const char *fmt, ...)

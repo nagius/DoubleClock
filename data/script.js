@@ -35,6 +35,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         </label>
                     `).join('')}
                 </div>
+                <div>
+                    <label for="primary${index}">Primary Timezone:</label>
+                    <input type="checkbox" id="primary${index}" name="primary${index}" ${alarm.primary ? 'checked' : ''}>
+                </div>
             `;
 
             alarmsContainer.appendChild(alarmDiv);
@@ -48,8 +52,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const hour = alarmDiv.querySelector(`input[name="hour${index}"]`).value;
             const minute = alarmDiv.querySelector(`input[name="minute${index}"]`).value;
             const days = Array.from(alarmDiv.querySelectorAll(`input[name="day${index}"]`)).map(input => input.checked);
+            const primary = alarmDiv.querySelector(`input[name="primary${index}"]`).checked;
 
-            alarms.push({ hour: parseInt(hour), minute: parseInt(minute), days });
+            alarms.push({ hour: parseInt(hour), minute: parseInt(minute), days, primary });
         });
 
         const payload = { alarms };

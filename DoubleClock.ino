@@ -516,14 +516,23 @@ void loop()
   else
   {
     // Trigger alarm
-    tmElements_t tm;
-    breakTime(tzA.now(), tm);  // use breakTime to get hour, minute and second in an atomic way
-    if(tm.Second == 00) // Only trigger alarm during one second per minute
+    if(tzA.second() == 0) // Only trigger alarm during one second per minute
     {
-      // today is Monday = 0 Sunday = 7; tm.Wday is Sunday = 1
-      int today = (tm.Wday + 5) % 7;
       for(int i; i<ALARM_COUNT; i++)
       {
+        tmElements_t tm;
+        if(settings.alarms[i].primary)
+        {
+          // use breakTime to get day, hour and minute in an atomic way
+          breakTime(tzA.now(), tm);
+        }
+        else
+        {
+          breakTime(tzB.now(), tm);
+        }
+
+        // today is Monday = 0 Sunday = 7; tm.Wday is Sunday = 1
+        int today = (tm.Wday + 5) % 7;
         if(settings.alarms[i].days[today] && settings.alarms[i].hour == tm.Hour && settings.alarms[i].minute == tm.Minute)
         {
           alarm();
