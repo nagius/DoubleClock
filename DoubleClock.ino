@@ -1,6 +1,5 @@
 // Double clock
 
-// Fix chime/buzzer when disabled
 // TODO add mqtt dans wifimanager
 // Siplify settings with https://www.arduino.cc/reference/en/libraries/wifimqttmanager-library/
 // TODO check mDNS
@@ -488,16 +487,16 @@ void loop()
   } 
   else if(state >= STATE_RING)
   {
-    long alarm_duration = (millis() - alarm_start_time);
+    long alarm_duration_ms = (millis() - alarm_start_time);
     
-    if(state == STATE_RING && alarm_duration >= settings.alarm_chime_delay*1000)
+    if(state == STATE_RING && settings.alarm_chime_delay != 0 && alarm_duration_ms >= settings.alarm_chime_delay*1000)
     {
       logger.debug("ALARM chime on");
       state = STATE_RING_CHIME;
       mqtt_publish("alarm-chime");
     }
 
-    if(state == STATE_RING_CHIME && alarm_duration >= (settings.alarm_chime_delay+settings.alarm_buzzer_delay)*1000)
+    if(state == STATE_RING_CHIME && settings.alarm_buzzer_delay != 0 && alarm_duration_ms >= (settings.alarm_chime_delay+settings.alarm_buzzer_delay)*1000)
     {
       logger.debug("ALARM buzzer on");
       state = STATE_RING_BUZZER;
@@ -505,7 +504,7 @@ void loop()
       mqtt_publish("alarm-buzzer");
     }
 
-    if(alarm_duration >= DEFAULT_ALARM_TIMEOUT*1000)
+    if(alarm_duration_ms >= DEFAULT_ALARM_TIMEOUT*1000)
     {
       stop_alarm();
       mqtt_publish("alarm-cancelled");
