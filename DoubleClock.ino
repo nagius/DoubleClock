@@ -1,11 +1,7 @@
 // Double clock
 
-// TODO add mqtt dans wifimanager
-// Siplify settings with https://www.arduino.cc/reference/en/libraries/wifimqttmanager-library/
-// TODO check mDNS
-
 #include <ESP8266WiFi.h>         
-#include <DNSServer.h>
+#include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
@@ -27,6 +23,7 @@
 #define ALLOW_CORS_FOR_LOCAL_DEV
 
 // Default value
+#define DEFAULT_HOSTNAME "DoubleClock"
 #define DEFAULT_LOGIN ""              // AuthBasic credentials
 #define DEFAULT_PASSWORD ""           // (default no auth)
 #define DEFAULT_DELAY 0               // Chime and buzzer disabled by default
@@ -39,7 +36,7 @@
 #define DEFAULT_TIMEZONE_B "Europe/Madrid"
 
 // Internal constant
-#define VERSION "1.4"
+#define VERSION "2.0"
 #define AUTHBASIC_LEN 21        // Login or password 20 char max
 #define BUF_SIZE 512            // Used for string buffers
 #define DNS_SIZE 63             // used for DNS names (should be 255 but 63 is enough)
@@ -385,6 +382,21 @@ void setupNTP()
   waitForSync(60);  // 60s timeout on initial NTP request
 }
 
+void setupMDNS()
+{
+  textA.setMsg("mDNS");
+  if(MDNS.begin(DEFAULT_HOSTNAME))
+  {
+    MDNS.addService("http", "tcp", 80);
+    logger.info("mDNS activated.");
+  }
+  else
+  {
+    logger.info("Error setting up mDNS responder");
+  }
+  delay(500);
+}
+
 void setup()
 {
   WiFiManager wifiManager;
@@ -426,7 +438,8 @@ void setup()
   
   // Connect to Wifi or ask for SSID
   textA.setMsg("WIFI");
-  wifiManager.autoConnect("DoubleClock");
+  wifiManager.setHostname(DEFAULT_HOSTNAME);
+  wifiManager.autoConnect(DEFAULT_HOSTNAME);
 
   // Save new configuration set by captive portal
   if(shouldSaveConfig)
@@ -466,10 +479,12 @@ void setup()
 
   setupNTP();
   setupMQTT();
+  setupMDNS();
 }
 
 void loop()
 {
+  MDNS.update();
   server.handleClient();
   events();  // EZTime events
   mqtt_loop();
