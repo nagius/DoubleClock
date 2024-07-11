@@ -88,6 +88,14 @@ void handlePOSTSettings()
     logger.info("Updated serial to %s.", settings.serial ? "true" : "false");
   }
 
+  if(json.containsKey("ntp"))
+  {
+    const char* ntp_server = json["ntp"];
+    strncpy(settings.ntp_server, ntp_server, DNS_SIZE);
+    setServer(settings.ntp_server);
+    logger.info("Updated NTP server to \"%s\".", settings.ntp_server);
+  }
+
   if(json.containsKey("login"))
   {
     const char* login = json["login"];
@@ -298,6 +306,7 @@ void sendJSONSettings()
   json_output["login"] = settings.login;
   json_output["debug"] = settings.debug;
   json_output["serial"] = settings.serial;
+  json_output["ntp"] = settings.ntp_server;
   json_output["delays"]["chime"] = settings.alarm_chime_delay;
   json_output["delays"]["buzzer"] = settings.alarm_buzzer_delay;
   json_output["mqtt"]["server"] = settings.mqtt_server;

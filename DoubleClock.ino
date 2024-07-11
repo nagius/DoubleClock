@@ -30,6 +30,7 @@
 #define DEFAULT_LOGIN ""              // AuthBasic credentials
 #define DEFAULT_PASSWORD ""           // (default no auth)
 #define DEFAULT_DELAY 0               // Chime and buzzer disabled by default
+#define DEFAULT_NTP_SERVER "pool.ntp.org"
 #define DEFAULT_MQTT_SERVER "0.0.0.0"
 #define DEFAULT_MQTT_PORT 1883
 #define DEFAULT_MQTT_TOPIC "doubleclock"
@@ -75,6 +76,7 @@ struct ST_SETTINGS {
   bool serial;
   char login[AUTHBASIC_LEN];
   char password[AUTHBASIC_LEN];
+  char ntp_server[DNS_SIZE];
   char mqtt_server[DNS_SIZE];
   uint16_t mqtt_port;
   uint16_t alarm_chime_delay;
@@ -379,6 +381,7 @@ void setupNTP()
   tzA.setLocation(DEFAULT_TIMEZONE_A);
   tzB.setLocation(DEFAULT_TIMEZONE_B);
   setDebug(INFO);   // ezTime debug
+  setServer(settings.ntp_server);
   waitForSync(60);  // 60s timeout on initial NTP request
 }
 

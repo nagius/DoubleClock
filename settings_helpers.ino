@@ -68,9 +68,10 @@ void loadSettings()
 
 void setDefaultSettings()
 {
-    strcpy(settings.login, DEFAULT_LOGIN);
-    strcpy(settings.password, DEFAULT_PASSWORD);
-    strcpy(settings.mqtt_server, DEFAULT_MQTT_SERVER);
+    strncpy(settings.login, DEFAULT_LOGIN, AUTHBASIC_LEN);
+    strncpy(settings.password, DEFAULT_PASSWORD, AUTHBASIC_LEN);
+    strncpy(settings.ntp_server, DEFAULT_NTP_SERVER, DNS_SIZE);
+    strncpy(settings.mqtt_server, DEFAULT_MQTT_SERVER, DNS_SIZE);
     settings.mqtt_port = DEFAULT_MQTT_PORT;
     settings.debug = true;
     settings.serial = true;
