@@ -264,6 +264,9 @@ void handlePOSTReset()
  */
 bool handleFileRead(String path)
 {
+  if(!isAuthBasicOK())
+    return true;
+
   // If a folder is requested, send the index file
   if (path.endsWith("/")) path += "index.html";
 
