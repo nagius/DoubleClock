@@ -1,4 +1,23 @@
-// Double clock
+/*************************************************************************
+ *
+ * This file is part of the DoubleClock Arduino sketch.
+ * Copyleft 2024 Nicolas Agius <nicolas.agius@lps-it.fr>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *
+ * ***********************************************************************/
+
 
 #include <ESP8266WiFi.h>         
 #include <ESP8266mDNS.h>
@@ -20,7 +39,7 @@
 #define ADC_MIN_THRESHOLD 300         // mV from photoresistor in darkness
 #define ADC_MAX_THRESHOLD 1000        // mV from photoresistor in sunlight
 #define ALARM_COUNT 2                 // Number of alarms
-#define ALLOW_CORS_FOR_LOCAL_DEV
+//#define ALLOW_CORS_FOR_LOCAL_DEV
 
 // Default value
 #define DEFAULT_HOSTNAME "DoubleClock"

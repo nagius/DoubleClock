@@ -1,5 +1,5 @@
 /*
- * This file is part of DoubleClock Arduino sketch
+ * This file is part of DoubleClock Arduino sketch under GPLv3
  * All helpers related to settings management are here  for ease of navigation.
  *
  * Global variables are defined in the main ino file.
