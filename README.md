@@ -96,7 +96,7 @@ curl -X POST http://doubleclock.local/settings -d '{"login": "myuser", "password
 
 ## Bill of materials
 
-- ESP12-E (Node MCU board)
+- ESP-12E (Node MCU board)
 - YS-M3 (Mp3 player board)
 - 2x 7-segments 4 digits with HT16K33 backback
 - 2x 14-segments 4 digits with HT16K33 backback
@@ -109,7 +109,13 @@ curl -X POST http://doubleclock.local/settings -d '{"login": "myuser", "password
 - Led strip
 - 5v regulator board (if led strip not in 5v)
 
-See [Schematics](docs/schematics.png]) for more details.
+See [Schematics](docs/schematics.png) for more details.
+
+## Compilation and upload
+
+Compile this sketch with Arduino IDE and select board `NodeMCU 1.0 (ESP-12E)`.
+
+To upload the static assets to the flash filesystem, you need to install the plugin [arduino-littlefs-upload](https://github.com/earlephilhower/arduino-littlefs-upload). Then hit `ctrl-shift-p` and select `Upload LittleFS to pico/ESP8266/ESP32`. Make sure the serial console is closed before.
 
 ## License
 
