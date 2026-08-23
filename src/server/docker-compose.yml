@@ -1,0 +1,8 @@
+version: '3.3'
+
+services:
+  timezoned:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "2342:2342/udp"
