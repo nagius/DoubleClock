@@ -35,7 +35,7 @@
 #include <LittleFS.h>
 
 // Behavior configuration
-#define RISING_TIME 180               // seconds to full britghness when alarm triggers
+#define RISING_TIME 200               // seconds to full britghness when alarm triggers
 #define ADC_MIN_THRESHOLD 300         // mV from photoresistor in darkness
 #define ADC_MAX_THRESHOLD 1000        // mV from photoresistor in sunlight
 #define ALARM_COUNT 2                 // Number of alarms
@@ -138,6 +138,7 @@ void light_off()
 void light_on(int duty_cycle)
 {
   analogWrite(GPIO_LIGHT, duty_cycle);
+  mqtt_publish("on");
 }
 
 bool isButtonPressed()
@@ -234,7 +235,6 @@ void setupMQTT()
   }
 }
 
-
 bool is_mqtt_enabled()
 {
   return strcmp(settings.mqtt_server, "0.0.0.0") != 0;
@@ -294,18 +294,19 @@ void alarm()
     logger.info("Alarm trigerred");
     state = STATE_RING;
     alarm_start_time = millis();
-    mqtt_publish("alarm");
+    mqtt_publish("alarm-on");
   }
 }
 
 void stop_alarm()
 {
   if(state >= STATE_RING)
+  {
     logger.info("Alarm stopped");
+    mqtt_publish("alarm-off");
 
-  state = STATE_OFF;
-  light_off();
-  music_off();
+    music_off();
+  }
 }
 
 void ring()
@@ -332,7 +333,6 @@ void ring()
     if(!is_music_playing() && settings.alarm_buzzer_delay!=0)
       music_buzzer_on();
   }
-  
 }
 
 void refresh_displays()
@@ -510,16 +510,21 @@ void loop()
 
   if(isButtonPressed())
   {
-    if(state == STATE_OFF)
-    {
-        state = STATE_ON;
+    switch (state) {
+      case STATE_OFF:
         light_on(255);
-        mqtt_publish("on");
-    }
-    else
-    {
+        state = STATE_ON;
+        break;
+
+      case STATE_ON:
+        light_off();
+        state = STATE_OFF;
+        break;
+
+      default:
         stop_alarm();
-        mqtt_publish("off");
+        state = STATE_ON; // Keep light on after alarm is disabled
+        break;
     }
   } 
   else if(state >= STATE_RING)
