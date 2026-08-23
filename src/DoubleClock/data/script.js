@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <input type="number" id="minute${index}" name="minute${index}" value="${alarm.minute}" min="0" max="59">
                 </div>
                 <div class="days">
-                    ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, dayIndex) => `
+                    ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, dayIndex) => `
                         <label>
                             <input type="checkbox" name="day${index}" value="${dayIndex}" ${alarm.days[dayIndex] ? 'checked' : ''}>
                             ${day}
