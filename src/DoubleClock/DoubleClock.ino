@@ -55,7 +55,7 @@
 #define DEFAULT_TIMEZONE_B "Europe/Madrid"
 
 // Internal constant
-#define VERSION "2.0"
+#define VERSION "2.1"
 #define AUTHBASIC_LEN 21        // Login or password 20 char max
 #define BUF_SIZE 512            // Used for string buffers
 #define DNS_SIZE 63             // used for DNS names (should be 255 but 63 is enough)
@@ -138,7 +138,6 @@ void light_off()
 void light_on(int duty_cycle)
 {
   analogWrite(GPIO_LIGHT, duty_cycle);
-  mqtt_publish("on");
 }
 
 bool isButtonPressed()
@@ -306,6 +305,8 @@ void stop_alarm()
     mqtt_publish("alarm-off");
 
     music_off();
+
+    action_light_on(); // Keep light on after alarm is disabled
   }
 }
 
@@ -486,6 +487,7 @@ void setup()
   server.on("/debug", HTTP_GET, handleGETDebug);
   server.on("/settings", HTTP_GET, handleGETSettings);
   server.on("/settings", HTTP_POST, handlePOSTSettings);
+  server.on("/action", HTTP_POST, handlePOSTAction);
   server.on("/reset", HTTP_POST, handlePOSTReset);
   server.onNotFound([]() {
     // Serve arbitrary requested file from LittleFS if exist
@@ -501,6 +503,25 @@ void setup()
   setupMDNS();
 }
 
+void action_light_on()
+{
+  light_on(255);
+  mqtt_publish("light-on");
+  state = STATE_ON;
+}
+
+void action_light_off()
+{
+  light_off();
+  mqtt_publish("light-off");
+  state = STATE_OFF;
+}
+
+void action_alarm_off()
+{
+  stop_alarm();
+}
+
 void loop()
 {
   MDNS.update();
@@ -512,18 +533,15 @@ void loop()
   {
     switch (state) {
       case STATE_OFF:
-        light_on(255);
-        state = STATE_ON;
+        action_light_on();
         break;
 
       case STATE_ON:
-        light_off();
-        state = STATE_OFF;
+        action_light_off();
         break;
 
       default:
-        stop_alarm();
-        state = STATE_ON; // Keep light on after alarm is disabled
+        action_alarm_off();
         break;
     }
   } 
@@ -549,6 +567,7 @@ void loop()
     if(alarm_duration_ms >= DEFAULT_ALARM_TIMEOUT*1000)
     {
       stop_alarm();
+      action_light_off();
       mqtt_publish("alarm-cancelled");
     }
 

@@ -260,6 +260,59 @@ void handlePOSTReset()
 }
 
 /**
+ * POST /action
+ * Args :
+ *   - action = <str>
+ */
+void handlePOSTAction()
+{
+  StaticJsonDocument<BUF_SIZE> json;
+
+  if(!isAuthBasicOK())
+    return;
+
+  DeserializationError error = deserializeJson(json, server.arg("plain"));
+  if(error)
+  {
+    sendJSONError("deserialize failed: %s", error.c_str());
+    return;
+  }
+
+  if(json.containsKey("action"))
+  {
+    const char* action = json["action"];
+    logger.debug("Received action %s.", action);
+
+    if(strcmp(action, "light-on") == 0)
+    {
+      action_light_on();
+    }
+    else if(strcmp(action, "light-off") == 0)
+    {
+      action_light_off();
+    }
+    else if(strcmp(action, "alarm-off") == 0)
+    {
+      action_alarm_off();
+    }
+    else
+    {
+      sendJSONError("Unknow action: %s", action);
+      return;
+    }
+
+    json_output.clear();
+    json_output["action"] = action;
+
+    serializeJson(json_output, buffer);
+    server.send(200, "application/json", buffer);
+  }
+
+  sendJSONError("Invalid request, missing action");
+}
+
+
+/**
  *  GET *
  */
 bool handleFileRead(String path)
